@@ -47,6 +47,7 @@
       events: {
         onReady: function (e) {
           document.getElementById('msg').style.display = 'none';
+          noFocus();
           setCaptions(ccOn);
           e.target.playVideo();
         },
@@ -97,6 +98,21 @@
     });
   }
   setInterval(report, 500);
+
+  // Tasten an Q-Feed weiterreichen, falls der Fokus hier landet
+  document.addEventListener('keydown', function (e) {
+    send({ qfeed: 'key', keyCode: e.keyCode });
+    e.preventDefault();
+  });
+  // Fokus nicht an das YouTube-iframe verlieren
+  function noFocus() {
+    try {
+      var f = player && player.getIframe && player.getIframe();
+      if (f) { f.setAttribute('tabindex', '-1'); f.style.pointerEvents = 'none'; }
+      if (document.activeElement && document.activeElement.tagName === 'IFRAME') document.activeElement.blur();
+    } catch (e) { /* egal */ }
+  }
+  setInterval(noFocus, 1000);
 
   window.addEventListener('message', function (ev) {
     var m = ev.data;
