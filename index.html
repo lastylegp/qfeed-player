@@ -73,14 +73,19 @@
         player.loadModule('captions');
         player.setOption('captions', 'track', { languageCode: 'de' });
       } else {
+        // leere Spur = Untertitel aus (zuverlässiger als unloadModule allein)
+        player.setOption('captions', 'track', {});
         player.unloadModule('captions');
         player.unloadModule('cc');
       }
     } catch (e) { /* egal */ }
   }
 
+  var startTs = Date.now();
   function report() {
     if (!player || !player.getCurrentTime) return;
+    // YouTube schaltet Untertitel teils erst nach Sekunden ein -> in den ersten 20 s immer wieder aus
+    if (!ccOn && Date.now() - startTs < 20000 && player.getPlayerState() === YT.PlayerState.PLAYING) setCaptions(false);
     var data = player.getVideoData ? player.getVideoData() : {};
     send({
       qfeed: 'state',
