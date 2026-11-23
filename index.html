@@ -20,6 +20,7 @@
  * (YouTube verweigert Einbettungen aus lokalen Apps mit Fehler 153).
  * Steuerung per postMessage aus der Q-Feed-App:
  *   {cmd:'toggle'} | {cmd:'play'} | {cmd:'pause'} | {cmd:'seek', delta: Sekunden} | {cmd:'stop'}
+ *   {cmd:'cc', on: true|false}   (Untertitel; Standard aus, ?cc=1 = an)
  * Meldet zurück: {qfeed:'state', t, d, paused, title} | {qfeed:'ended'} | {qfeed:'error', code}
  */
 (function () {
@@ -27,6 +28,7 @@
   var params = new URLSearchParams(location.search);
   var vid = params.get('v') || '';
   var start = parseInt(params.get('t') || '0', 10) || 0;
+  var ccOn = params.get('cc') === '1';
   var player = null, parentWin = window.parent;
 
   function send(o) { o.qfeed = o.qfeed || 'state'; try { parentWin.postMessage(o, '*'); } catch (e) { /* egal */ } }
@@ -40,14 +42,18 @@
     player = new YT.Player('player', {
       videoId: vid,
       host: 'https://www.youtube.com',
-      playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1, start: start, iv_load_policy: 3, fs: 0, disablekb: 1 },
+      playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1, start: start, iv_load_policy: 3, fs: 0, disablekb: 1,
+        cc_load_policy: ccOn ? 1 : 0, cc_lang_pref: 'de', hl: 'de' },
       events: {
         onReady: function (e) {
           document.getElementById('msg').style.display = 'none';
+          setCaptions(ccOn);
           e.target.playVideo();
         },
         onStateChange: function (e) {
           if (e.data === YT.PlayerState.ENDED) send({ qfeed: 'ended' });
+          // YouTube lädt Untertitel beim Start teils automatisch nach -> erneut abschalten
+          if (e.data === YT.PlayerState.PLAYING && !ccOn && !ccFixed) { ccFixed = true; setCaptions(false); }
           report();
         },
         onError: function (e) {
@@ -59,6 +65,20 @@
     });
   };
 
+  var ccFixed = false;
+  function setCaptions(on) {
+    ccOn = on;
+    try {
+      if (on) {
+        player.loadModule('captions');
+        player.setOption('captions', 'track', { languageCode: 'de' });
+      } else {
+        player.unloadModule('captions');
+        player.unloadModule('cc');
+      }
+    } catch (e) { /* egal */ }
+  }
+
   function report() {
     if (!player || !player.getCurrentTime) return;
     var data = player.getVideoData ? player.getVideoData() : {};
@@ -67,7 +87,8 @@
       t: player.getCurrentTime() || 0,
       d: player.getDuration() || 0,
       paused: player.getPlayerState() !== YT.PlayerState.PLAYING,
-      title: (data && data.title) || ''
+      title: (data && data.title) || '',
+      cc: ccOn
     });
   }
   setInterval(report, 500);
@@ -81,6 +102,7 @@
       case 'play': player.playVideo(); break;
       case 'pause': player.pauseVideo(); break;
       case 'stop': player.stopVideo(); break;
+      case 'cc': setCaptions(m.on === undefined ? !ccOn : !!m.on); break;
       case 'seek':
         var d = player.getDuration() || 0;
         var t = Math.max(0, (player.getCurrentTime() || 0) + (+m.delta || 0));
