@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Q-Feed Player</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  #player { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #msg { position: absolute; left: 0; right: 0; top: 45%; text-align: center; color: #9AA3AF; font: 28px sans-serif; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<div id="msg">Lade Video …</div>
+<script>
+/*
+ * Q-Feed Player – bettet ein YouTube-Video ein, damit es eine echte Web-Adresse hat
+ * (YouTube verweigert Einbettungen aus lokalen Apps mit Fehler 153).
+ * Steuerung per postMessage aus der Q-Feed-App:
+ *   {cmd:'toggle'} | {cmd:'play'} | {cmd:'pause'} | {cmd:'seek', delta: Sekunden} | {cmd:'stop'}
+ * Meldet zurück: {qfeed:'state', t, d, paused, title} | {qfeed:'ended'} | {qfeed:'error', code}
+ */
+(function () {
+  'use strict';
+  var params = new URLSearchParams(location.search);
+  var vid = params.get('v') || '';
+  var start = parseInt(params.get('t') || '0', 10) || 0;
+  var player = null, parentWin = window.parent;
+
+  function send(o) { o.qfeed = o.qfeed || 'state'; try { parentWin.postMessage(o, '*'); } catch (e) { /* egal */ } }
+
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(vid)) {
+    document.getElementById('msg').textContent = 'Keine gültige Video-ID';
+    return;
+  }
+
+  window.onYouTubeIframeAPIReady = function () {
+    player = new YT.Player('player', {
+      videoId: vid,
+      host: 'https://www.youtube.com',
+      playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1, start: start, iv_load_policy: 3, fs: 0, disablekb: 1 },
+      events: {
+        onReady: function (e) {
+          document.getElementById('msg').style.display = 'none';
+          e.target.playVideo();
+        },
+        onStateChange: function (e) {
+          if (e.data === YT.PlayerState.ENDED) send({ qfeed: 'ended' });
+          report();
+        },
+        onError: function (e) {
+          document.getElementById('msg').style.display = 'block';
+          document.getElementById('msg').textContent = 'YouTube-Fehler ' + e.data;
+          send({ qfeed: 'error', code: e.data });
+        }
+      }
+    });
+  };
+
+  function report() {
+    if (!player || !player.getCurrentTime) return;
+    var data = player.getVideoData ? player.getVideoData() : {};
+    send({
+      qfeed: 'state',
+      t: player.getCurrentTime() || 0,
+      d: player.getDuration() || 0,
+      paused: player.getPlayerState() !== YT.PlayerState.PLAYING,
+      title: (data && data.title) || ''
+    });
+  }
+  setInterval(report, 500);
+
+  window.addEventListener('message', function (ev) {
+    var m = ev.data;
+    if (!m || typeof m !== 'object' || !m.cmd || !player || !player.getPlayerState) return;
+    var st = player.getPlayerState();
+    switch (m.cmd) {
+      case 'toggle': if (st === YT.PlayerState.PLAYING) player.pauseVideo(); else player.playVideo(); break;
+      case 'play': player.playVideo(); break;
+      case 'pause': player.pauseVideo(); break;
+      case 'stop': player.stopVideo(); break;
+      case 'seek':
+        var d = player.getDuration() || 0;
+        var t = Math.max(0, (player.getCurrentTime() || 0) + (+m.delta || 0));
+        if (d) t = Math.min(d - 1, t);
+        player.seekTo(t, true);
+        break;
+    }
+    report();
+  });
+
+  var s = document.createElement('script');
+  s.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
