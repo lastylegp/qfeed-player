@@ -83,8 +83,39 @@
   }
 
   var startTs = Date.now();
+
+  /*
+   * Werbung erkennen: Die Zeit des eigentlichen Videos steht still, obwohl nicht pausiert.
+   * Dann Fernbedienung an den YouTube-Player übergeben (OK = Überspringen).
+   */
+  var adMode = false, lastT = -1, lastMove = Date.now();
+  function checkAd() {
+    var t = player.getCurrentTime() || 0, st = player.getPlayerState();
+    var now = Date.now();
+    if (Math.abs(t - lastT) > 0.05) { lastT = t; lastMove = now; }
+    var halted = st !== YT.PlayerState.PAUSED && st !== YT.PlayerState.ENDED && st !== YT.PlayerState.CUED;
+    var stuck = halted && now - lastMove > 3000;
+    if (stuck && !adMode) setAd(true);
+    else if (!stuck && adMode) setAd(false);
+  }
+  function setAd(on) {
+    adMode = on;
+    send({ qfeed: 'ad', on: on });
+    try {
+      var f = player.getIframe();
+      if (on) {
+        f.setAttribute('tabindex', '0');
+        f.style.pointerEvents = 'auto';
+        f.focus();
+      } else {
+        noFocus();
+      }
+    } catch (e) { /* egal */ }
+  }
+
   function report() {
     if (!player || !player.getCurrentTime) return;
+    checkAd();
     // YouTube schaltet Untertitel teils erst nach Sekunden ein -> in den ersten 20 s immer wieder aus
     if (!ccOn && Date.now() - startTs < 20000 && player.getPlayerState() === YT.PlayerState.PLAYING) setCaptions(false);
     var data = player.getVideoData ? player.getVideoData() : {};
@@ -108,11 +139,11 @@
   function noFocus() {
     try {
       var f = player && player.getIframe && player.getIframe();
-      if (f) { f.setAttribute('tabindex', '-1'); f.style.pointerEvents = 'none'; }
+      if (f) { f.setAttribute('tabindex', '-1'); f.style.pointerEvents = 'none'; f.blur(); }
       if (document.activeElement && document.activeElement.tagName === 'IFRAME') document.activeElement.blur();
     } catch (e) { /* egal */ }
   }
-  setInterval(noFocus, 1000);
+  setInterval(function () { if (!adMode) noFocus(); }, 1000);
 
   window.addEventListener('message', function (ev) { handle(ev.data); });
 
