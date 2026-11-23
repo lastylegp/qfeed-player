@@ -114,8 +114,22 @@
   }
   setInterval(noFocus, 1000);
 
-  window.addEventListener('message', function (ev) {
-    var m = ev.data;
+  window.addEventListener('message', function (ev) { handle(ev.data); });
+
+  // Zweiter Kanal ohne postMessage: Befehl im Adress-Fragment, z. B. #c=seek&d=30&n=7
+  var lastN = null;
+  window.addEventListener('hashchange', function () {
+    var h = new URLSearchParams(location.hash.slice(1));
+    var n = h.get('n');
+    if (!h.get('c') || n === lastN) return;
+    lastN = n;
+    var m = { cmd: h.get('c') };
+    if (h.has('d')) m.delta = parseFloat(h.get('d'));
+    if (h.has('on')) m.on = h.get('on') === '1';
+    handle(m);
+  });
+
+  function handle(m) {
     if (!m || typeof m !== 'object' || !m.cmd || !player || !player.getPlayerState) return;
     var st = player.getPlayerState();
     switch (m.cmd) {
@@ -132,7 +146,7 @@
         break;
     }
     report();
-  });
+  }
 
   var s = document.createElement('script');
   s.src = 'https://www.youtube.com/iframe_api';
