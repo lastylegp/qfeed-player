@@ -86,7 +86,7 @@
       qfeed: 'state',
       t: player.getCurrentTime() || 0,
       d: player.getDuration() || 0,
-      paused: player.getPlayerState() !== YT.PlayerState.PLAYING,
+      paused: player.getPlayerState() === YT.PlayerState.PAUSED,
       title: (data && data.title) || '',
       cc: ccOn
     });
